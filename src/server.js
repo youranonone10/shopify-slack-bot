@@ -58,6 +58,7 @@ app.post("/webhook/order-created", async (req, res) => {
       productTitle: item.title,
       variantTitle: item.variant_title,
       sku: item.sku,
+      supplier: store.supplier, // "arin_cheny" or "winter"
     });
   }
 });
