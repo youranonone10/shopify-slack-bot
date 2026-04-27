@@ -1,36 +1,84 @@
 /**
  * Slack Bot Module
- * Posts size chart requests to your Slack channel and tags the supplier.
+ * Posts size chart requests to the correct Slack channel
+ * and tags the correct supplier(s) based on the store's supplier group.
+ *
+ * Supplier groups:
+ *  "arin_cheny" → SLACK_CHANNEL_ARIN   → tags @Arin & @Cheny
+ *  "winter"     → SLACK_CHANNEL_WINTER → tags @Winter
  */
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
-const SLACK_CHANNEL_ID = process.env.SLACK_CHANNEL_ID;
-const SUPPLIER_SLACK_USER_ID = process.env.SUPPLIER_SLACK_USER_ID; // e.g. "U0123456789"
 
-async function postSizeChartRequest({ storeName, orderNumber, productId, productTitle, variantTitle, sku }) {
-  if (!SLACK_BOT_TOKEN || !SLACK_CHANNEL_ID) {
-    throw new Error("Missing SLACK_BOT_TOKEN or SLACK_CHANNEL_ID in environment variables");
+// Slack User IDs for each supplier (set these in Railway Variables)
+const SUPPLIER_CONFIG = {
+  arin_cheny: {
+    channelId: process.env.SLACK_CHANNEL_ARIN,
+    // Tag both Arin and Cheny
+    mentionText: `<@${process.env.SLACK_USER_ARIN}> & <@${process.env.SLACK_USER_CHENY}>`,
+    label: "Arin & Cheny",
+  },
+  winter: {
+    channelId: process.env.SLACK_CHANNEL_WINTER,
+    mentionText: `<@${process.env.SLACK_USER_WINTER}>`,
+    label: "Winter Early",
+  },
+};
+
+async function postSizeChartRequest({
+  storeName,
+  orderNumber,
+  productId,
+  productTitle,
+  variantTitle,
+  sku,
+  supplier, // "arin_cheny" or "winter"
+}) {
+  if (!SLACK_BOT_TOKEN) {
+    throw new Error("Missing SLACK_BOT_TOKEN in environment variables");
   }
 
-  const skuLine = sku ? `*SKU:* \`${sku}\`` : "";
+  const config = SUPPLIER_CONFIG[supplier];
+  if (!config) {
+    throw new Error(`Unknown supplier group: "${supplier}"`);
+  }
+  if (!config.channelId) {
+    throw new Error(`Missing Slack channel ID for supplier group: "${supplier}"`);
+  }
+
   const variantLine = variantTitle && variantTitle !== "Default Title"
     ? `*Variant:* ${variantTitle}`
     : "";
 
-  const text = [
-    `:package: *New Size Chart Request*`,
-    ``,
-    `*Store:* ${storeName}`,
-    `*Order #:* ${orderNumber}`,
-    `*Product:* ${productTitle}`,
-    variantLine,
-    skuLine,
-    `*Product ID:* \`${productId}\``,
-    ``,
-    `<@${SUPPLIER_SLACK_USER_ID}> Please provide the size chart for this product. Thank you! :pray:`,
-  ]
-    .filter((line) => line !== undefined && line !== null)
-    .join("\n");
+  // Plain text fallback (shown in notifications)
+  const text = `📦 Size Chart Request — ${productTitle} (Order #${orderNumber})`;
+
+  // Rich block message matching your exact format
+  const blocks = [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: [
+          `*Store:* ${storeName}`,
+          `*Order #:* ${orderNumber}`,
+          `*Product name :* ${productTitle}`,
+          `*Product ID:* \`${productId}\``,
+          variantLine,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      },
+    },
+    { type: "divider" },
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `${config.mentionText} Please provide the size chart for this product. 🙏`,
+      },
+    },
+  ];
 
   const response = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
@@ -39,34 +87,9 @@ async function postSizeChartRequest({ storeName, orderNumber, productId, product
       Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
     },
     body: JSON.stringify({
-      channel: SLACK_CHANNEL_ID,
+      channel: config.channelId,
       text,
-      // Rich block format for better readability
-      blocks: [
-        {
-          type: "header",
-          text: { type: "plain_text", text: "📦 Size Chart Request", emoji: true },
-        },
-        {
-          type: "section",
-          fields: [
-            { type: "mrkdwn", text: `*Store:*\n${storeName}` },
-            { type: "mrkdwn", text: `*Order #:*\n${orderNumber}` },
-            { type: "mrkdwn", text: `*Product:*\n${productTitle}` },
-            { type: "mrkdwn", text: `*Product ID:*\n\`${productId}\`` },
-            ...(variantLine ? [{ type: "mrkdwn", text: `*Variant:*\n${variantTitle}` }] : []),
-            ...(sku ? [{ type: "mrkdwn", text: `*SKU:*\n\`${sku}\`` }] : []),
-          ],
-        },
-        { type: "divider" },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `<@${SUPPLIER_SLACK_USER_ID}> Please provide the size chart for this product. :pray:`,
-          },
-        },
-      ],
+      blocks,
     }),
   });
 
@@ -75,6 +98,7 @@ async function postSizeChartRequest({ storeName, orderNumber, productId, product
     throw new Error(`Slack API error: ${data.error}`);
   }
 
+  console.log(`📨 Slack message sent to ${config.label} channel for "${productTitle}"`);
   return data;
 }
 
