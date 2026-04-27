@@ -7,8 +7,11 @@ global.STORES = STORES;
 // Validate required environment variables on startup
 const required = [
   "SLACK_BOT_TOKEN",
-  "SLACK_CHANNEL_ID",
-  "SUPPLIER_SLACK_USER_ID",
+  "SLACK_CHANNEL_ARIN",
+  "SLACK_CHANNEL_WINTER",
+  "SLACK_USER_ARIN",
+  "SLACK_USER_CHENY",
+  "SLACK_USER_WINTER",
 ];
 
 const missing = required.filter((key) => !process.env[key]);
