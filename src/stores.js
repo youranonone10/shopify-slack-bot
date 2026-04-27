@@ -30,42 +30,6 @@ const STORES = [
     supplier: "arin_cheny",
     webhookSecret: process.env.WEBHOOK_SECRET_STORE2,
   },
-  {
-    domain: "arin-store-3.myshopify.com",      // ← replace with real domain
-    name: "Store 3",
-    supplier: "arin_cheny",
-    webhookSecret: process.env.WEBHOOK_SECRET_STORE3,
-  },
-  {
-    domain: "arin-store-4.myshopify.com",      // ← replace with real domain
-    name: "Store 4",
-    supplier: "arin_cheny",
-    webhookSecret: process.env.WEBHOOK_SECRET_STORE4,
-  },
-  {
-    domain: "arin-store-5.myshopify.com",      // ← replace with real domain
-    name: "Store 5",
-    supplier: "arin_cheny",
-    webhookSecret: process.env.WEBHOOK_SECRET_STORE5,
-  },
-  {
-    domain: "arin-store-6.myshopify.com",      // ← replace with real domain
-    name: "Store 6",
-    supplier: "arin_cheny",
-    webhookSecret: process.env.WEBHOOK_SECRET_STORE6,
-  },
-  {
-    domain: "arin-store-7.myshopify.com",      // ← replace with real domain
-    name: "Store 7",
-    supplier: "arin_cheny",
-    webhookSecret: process.env.WEBHOOK_SECRET_STORE7,
-  },
-  {
-    domain: "arin-store-8.myshopify.com",      // ← replace with real domain
-    name: "Store 8",
-    supplier: "arin_cheny",
-    webhookSecret: process.env.WEBHOOK_SECRET_STORE8,
-  },
 
   // ── WINTER EARLY STORES (3 stores) ───────────────────────────────────────
   {
@@ -74,19 +38,6 @@ const STORES = [
     supplier: "winter",
     webhookSecret: process.env.WEBHOOK_SECRET_WINTER1,
   },
-  {
-    domain: "winter-store-2.myshopify.com",    // ← replace with real domain
-    name: "Winter Store 2",
-    supplier: "winter",
-    webhookSecret: process.env.WEBHOOK_SECRET_WINTER2,
-  },
-  {
-    domain: "winter-store-3.myshopify.com",    // ← replace with real domain
-    name: "Winter Store 3",
-    supplier: "winter",
-    webhookSecret: process.env.WEBHOOK_SECRET_WINTER3,
-  },
-
 ];
 
 module.exports = STORES;
