@@ -9,8 +9,8 @@
 
 const STORES = [
   {
-    domain: "your-store-1.myshopify.com",
-    name: "Store UK",
+    domain: "herohonda-2.myshopify.com",
+    name: "herohonda",
     webhookSecret: process.env.WEBHOOK_SECRET_STORE1,
   },
   {
