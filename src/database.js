@@ -1,17 +1,15 @@
 /**
  * Database module
- * Uses SQLite so you pay $0 — file stored on the server.
+ * Uses SQLite — zero cost, file stored on the server.
  *
  * ✅ Tracks by PRODUCT NAME (not SKU or variant).
- * So "Baggy Jeans" XL Black and "Baggy Jeans" L Black are treated as the
- * SAME product — size chart is only requested once.
+ * ✅ Supports: reminders, status tracking, Slack thread linking, supplier info.
  */
 const Database = require("better-sqlite3");
 const path = require("path");
+const fs = require("fs");
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, "../data/requests.db");
-
-const fs = require("fs");
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
 const db = new Database(DB_PATH);
@@ -22,65 +20,68 @@ db.exec(`
     product_title     TEXT,
     product_id        TEXT,
     store_name        TEXT,
+    supplier          TEXT,
     first_order       TEXT,
-    requested_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    status            TEXT DEFAULT 'pending',
+    slack_thread_ts   TEXT,
+    reminder_24_sent  INTEGER DEFAULT 0,
+    reminder_48_sent  INTEGER DEFAULT 0,
+    requested_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    received_at       DATETIME
   )
 `);
 
-/**
- * Normalise a product title into a stable lookup key.
- * "Baggy Jeans - Black" and "baggy jeans black" both → "baggy jeans black"
- * Strips punctuation/extra spaces so minor title differences don't fool it.
- */
 function normaliseTitle(title) {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ") // remove punctuation
-    .replace(/\s+/g, " ")          // collapse spaces
-    .trim();
+  return title.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-/**
- * Has a size chart already been requested for this product NAME?
- * Returns the existing DB row (with original title) or null.
- */
 function isAlreadyRequested(productTitle) {
   const key = normaliseTitle(productTitle);
-  const row = db.prepare(
-    "SELECT product_name_key, product_title FROM size_chart_requests WHERE product_name_key = ?"
-  ).get(key);
-  return row || null;
+  return db.prepare("SELECT * FROM size_chart_requests WHERE product_name_key = ?").get(key) || null;
 }
 
-/**
- * Mark a product name as requested so it's never asked again.
- */
-function markAsRequested(productTitle, productId, storeName, orderNumber) {
-  const key = normaliseTitle(productTitle);
-  db.prepare(`
-    INSERT OR IGNORE INTO size_chart_requests
-      (product_name_key, product_title, product_id, store_name, first_order)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(key, productTitle, String(productId), storeName, String(orderNumber));
+function getRequestBySlackThread(threadTs) {
+  return db.prepare("SELECT * FROM size_chart_requests WHERE slack_thread_ts = ?").get(threadTs) || null;
 }
 
-/**
- * List all products that have been requested (for admin review).
- */
 function getAllRequested() {
   return db.prepare("SELECT * FROM size_chart_requests ORDER BY requested_at DESC").all();
 }
 
-/**
- * Remove a product by name so the bot will ask again next order.
- * Useful if supplier provided a wrong/missing size chart.
- */
-function removeRequest(productTitle) {
-  const key = normaliseTitle(productTitle);
-  const changes = db.prepare(
-    "DELETE FROM size_chart_requests WHERE product_name_key = ?"
-  ).run(key).changes;
-  return changes > 0;
+function getPendingReminders() {
+  return db.prepare("SELECT * FROM size_chart_requests WHERE status = 'pending'").all();
 }
 
-module.exports = { isAlreadyRequested, markAsRequested, getAllRequested, removeRequest, normaliseTitle };
+function markAsRequested(productTitle, productId, storeName, orderNumber, supplier, slackThreadTs) {
+  const key = normaliseTitle(productTitle);
+  db.prepare(`
+    INSERT OR IGNORE INTO size_chart_requests
+      (product_name_key, product_title, product_id, store_name, supplier, first_order, slack_thread_ts)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(key, productTitle, String(productId), storeName, supplier, String(orderNumber), slackThreadTs || null);
+}
+
+function saveSlackThread(productTitle, threadTs) {
+  const key = normaliseTitle(productTitle);
+  db.prepare("UPDATE size_chart_requests SET slack_thread_ts = ? WHERE product_name_key = ?").run(threadTs, key);
+}
+
+function markAsReceived(productNameKey) {
+  db.prepare("UPDATE size_chart_requests SET status = 'received', received_at = CURRENT_TIMESTAMP WHERE product_name_key = ?").run(productNameKey);
+}
+
+function markReminderSent(productNameKey, hours) {
+  const col = hours === "48" ? "reminder_48_sent" : "reminder_24_sent";
+  db.prepare(`UPDATE size_chart_requests SET ${col} = 1 WHERE product_name_key = ?`).run(productNameKey);
+}
+
+function removeRequest(productTitle) {
+  const key = normaliseTitle(productTitle);
+  return db.prepare("DELETE FROM size_chart_requests WHERE product_name_key = ?").run(key).changes > 0;
+}
+
+module.exports = {
+  normaliseTitle, isAlreadyRequested, getRequestBySlackThread,
+  getAllRequested, getPendingReminders, markAsRequested,
+  saveSlackThread, markAsReceived, markReminderSent, removeRequest,
+};
