@@ -1,67 +1,66 @@
 /**
  * FEATURE 2 — Supplier Confirmation Listener
  *
- * When a supplier replies in Slack with keywords like "done", "sent", "here you go",
- * or uploads a file/image (the size chart), the bot:
- *  1. Replies with ✅ "Size chart received, thank you!"
- *  2. Marks the product as RECEIVED in the database
- *  3. Updates Google Sheets status to "Received ✅"
- *  4. Auto-tags the Shopify order with "size-chart-done"
- *
- * Setup required:
- *  - In api.slack.com → Event Subscriptions → enable
- *  - Subscribe to: message.channels
- *  - Request URL: https://your-railway-url.app/slack/events
+ * When a supplier replies in the thread with a file/image or confirmation keywords,
+ * the bot replies with ✅ confirmed message and marks as received.
  */
 
 const db = require("./database");
 const { updateSheetStatus } = require("./googleSheets");
 const { tagShopifyOrder } = require("./shopifyTagger");
 
-// Keywords that mean the supplier has sent the size chart
 const CONFIRMATION_KEYWORDS = [
   "done", "sent", "here", "attached", "please find", "size chart",
   "chart", "uploaded", "updated", "check", "✅", "👍",
 ];
 
 function isConfirmation(text, hasFiles) {
-  if (hasFiles) return true; // any file/image upload counts
+  if (hasFiles) return true;
   if (!text) return false;
   const lower = text.toLowerCase();
   return CONFIRMATION_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-/**
- * Handle incoming Slack events (message posted in channel)
- */
 async function handleSlackEvent(payload) {
-  // Ignore bot's own messages to prevent infinite loops
-  if (payload.event?.bot_id) return;
-  if (payload.event?.subtype === "bot_message") return;
-
   const event = payload.event;
-  if (!event || event.type !== "message") return;
+  if (!event) return;
+
+  // CRITICAL: Ignore ALL bot messages to prevent infinite loop
+  if (event.bot_id) return;
+  if (event.bot_profile) return;
+  if (event.subtype === "bot_message") return;
+  if (event.username === "Test BOT") return;
+
+  // Only care about threaded replies (thread_ts exists and differs from ts)
+  if (!event.thread_ts || event.thread_ts === event.ts) return;
 
   const messageText = event.text || "";
   const hasFiles = event.files && event.files.length > 0;
-  const channelId = event.channel;
-  const threadTs = event.thread_ts || event.ts;
 
   if (!isConfirmation(messageText, hasFiles)) return;
 
+  const threadTs = event.thread_ts;
+  const channelId = event.channel;
+
   // Find which product this thread belongs to
   const request = db.getRequestBySlackThread(threadTs);
-  if (!request) return; // message not related to any size chart request
+  if (!request) {
+    console.log(`No request found for thread ${threadTs}`);
+    return;
+  }
 
-  if (request.status === "received") return; // already marked done
+  if (request.status === "received") {
+    console.log(`Already marked received for "${request.product_title}"`);
+    return;
+  }
 
   console.log(`✅ Supplier confirmed size chart for "${request.product_title}"`);
 
   // 1. Mark as received in DB
   db.markAsReceived(request.product_name_key);
 
-  // 2. Reply in Slack thread
-  await replyInThread(channelId, threadTs, request.product_title);
+  // 2. Reply with ✅ confirmation (text only, no image forwarding)
+  await replyConfirmation(channelId, threadTs, request.product_title);
 
   // 3. Update Google Sheets
   try {
@@ -70,7 +69,7 @@ async function handleSlackEvent(payload) {
     console.error("Google Sheets update failed:", err.message);
   }
 
-  // 4. Tag Shopify order
+  // 4. Tag Shopify order as done
   try {
     await tagShopifyOrder(request.store_name, request.first_order, "size-chart-done");
   } catch (err) {
@@ -78,7 +77,7 @@ async function handleSlackEvent(payload) {
   }
 }
 
-async function replyInThread(channelId, threadTs, productTitle) {
+async function replyConfirmation(channelId, threadTs, productTitle) {
   const response = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: {
